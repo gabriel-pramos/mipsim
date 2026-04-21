@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "verbatimModuleSyntax": false,
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "allowJs": true,
+    "types": ["jest", "node"],
+    "esModuleInterop": true
+  },
+  "include": ["app/core/**/*", "app/utils/**/*", "parser/mips.js"]
+}
