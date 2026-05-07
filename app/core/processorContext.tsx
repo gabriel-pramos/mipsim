@@ -4,6 +4,7 @@ import {
   useState,
   useRef,
   useCallback,
+  useEffect,
   type ReactNode,
 } from 'react';
 import { Processor, type ProcessorState } from './Processor';
@@ -11,12 +12,16 @@ import type { Instruction } from './encoding';
 
 interface ProcessorContextValue {
   state: ProcessorState;
+  /** Snapshot of `state.registers` taken just before the most recent step (or initial state). */
+  prevRegisters: number[];
   instructionWordMap: Map<number, Instruction>;
   userTextWordCount: number;
   isRunning: boolean;
   executionSpeed: number;
   code: string;
   pastUser: boolean;
+  /** Word indices (byte PC / 4) where execution should pause when running. */
+  breakpoints: Set<number>;
   loadInstructions: (
     map: Map<number, Instruction>,
     uw: number,
@@ -29,6 +34,8 @@ interface ProcessorContextValue {
   sendToTerminal: (text: string) => void;
   setSpeed: (ms: number) => void;
   setCode: (code: string) => void;
+  toggleBreakpoint: (wordIdx: number) => void;
+  clearBreakpoints: () => void;
 }
 
 const ProcessorContext = createContext<ProcessorContextValue | null>(null);
@@ -45,6 +52,7 @@ main:
 export function ProcessorProvider({ children }: { children: ReactNode }) {
   const [processor] = useState(() => new Processor());
   const [state, setState] = useState<ProcessorState>(() => processor.getState());
+  const [prevRegisters, setPrevRegisters] = useState<number[]>(() => [...processor.getState().registers]);
   const [instructionWordMap, setInstructionWordMap] = useState<Map<number, Instruction>>(
     () => new Map(),
   );
@@ -52,7 +60,14 @@ export function ProcessorProvider({ children }: { children: ReactNode }) {
   const [isRunning, setIsRunning] = useState(false);
   const [executionSpeed, setExecutionSpeed] = useState(1000);
   const [code, setCode] = useState(DEFAULT_CODE);
+  const [breakpoints, setBreakpoints] = useState<Set<number>>(() => new Set());
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Live mirror of breakpoints so the running interval sees current values
+  // without restarting whenever the user toggles a breakpoint.
+  const breakpointsRef = useRef<Set<number>>(breakpoints);
+  useEffect(() => {
+    breakpointsRef.current = breakpoints;
+  }, [breakpoints]);
 
   const loadInstructions = useCallback(
     (map: Map<number, Instruction>, uw: number, dataBytes?: number[]) => {
@@ -62,24 +77,35 @@ export function ProcessorProvider({ children }: { children: ReactNode }) {
       }
       setInstructionWordMap(new Map(map));
       setUserTextWordCount(uw);
-      setState(processor.getState());
+      const fresh = processor.getState();
+      setState(fresh);
+      setPrevRegisters([...fresh.registers]);
+      setBreakpoints(new Set());
     },
     [processor],
   );
 
   const step = useCallback(() => {
+    const before = [...processor.getState().registers];
     processor.step();
+    setPrevRegisters(before);
     setState(processor.getState());
   }, [processor]);
 
   const run = useCallback(() => {
     setIsRunning(true);
     const interval = setInterval(() => {
+      const before = [...processor.getState().registers];
       processor.step();
       const newState = processor.getState();
+      setPrevRegisters(before);
       setState(newState);
 
-      if (processor.isPcPastUserText(newState.pc)) {
+      const pcWord = (newState.pc >>> 2) >>> 0;
+      if (
+        processor.isPcPastUserText(newState.pc) ||
+        breakpointsRef.current.has(pcWord)
+      ) {
         setIsRunning(false);
         clearInterval(interval);
         intervalRef.current = null;
@@ -99,13 +125,28 @@ export function ProcessorProvider({ children }: { children: ReactNode }) {
 
   const reset = useCallback(() => {
     processor.reset();
-    setState(processor.getState());
+    const fresh = processor.getState();
+    setState(fresh);
+    setPrevRegisters([...fresh.registers]);
     setIsRunning(false);
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
   }, [processor]);
+
+  const toggleBreakpoint = useCallback((wordIdx: number) => {
+    setBreakpoints((prev) => {
+      const next = new Set(prev);
+      if (next.has(wordIdx)) next.delete(wordIdx);
+      else next.add(wordIdx);
+      return next;
+    });
+  }, []);
+
+  const clearBreakpoints = useCallback(() => {
+    setBreakpoints(new Set());
+  }, []);
 
   const sendToTerminal = useCallback(
     (text: string) => {
@@ -123,12 +164,14 @@ export function ProcessorProvider({ children }: { children: ReactNode }) {
 
   const value: ProcessorContextValue = {
     state,
+    prevRegisters,
     instructionWordMap,
     userTextWordCount,
     isRunning,
     executionSpeed,
     code,
     pastUser,
+    breakpoints,
     loadInstructions,
     step,
     run,
@@ -137,6 +180,8 @@ export function ProcessorProvider({ children }: { children: ReactNode }) {
     sendToTerminal,
     setSpeed,
     setCode,
+    toggleBreakpoint,
+    clearBreakpoints,
   };
 
   return (

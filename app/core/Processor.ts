@@ -73,6 +73,10 @@ export interface ProcessorState {
   pc: number;
   nextPC: number;
   registers: number[];
+  /** MIPS HI special register (high half of mult / remainder of div). */
+  hi: number;
+  /** MIPS LO special register (low half of mult / quotient of div). */
+  lo: number;
   instruction: number;
   instructionFields: {
     rs: number;
@@ -542,6 +546,8 @@ export class Processor {
       pc: this.pc.PC,
       nextPC: this.pcAdder.getOutput('nextPC') || this.pc.PC + 4,
       registers: [...this.registerFile.registers],
+      hi: this.hi >>> 0,
+      lo: this.lo >>> 0,
       instruction: encoded,
       instructionFields: {
         rs: currentInstr?.rs ?? currentInstr?.base ?? 0,

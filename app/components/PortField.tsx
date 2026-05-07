@@ -55,9 +55,9 @@ export default function PortField({
       ref={portRef}
       data-port-id={id}
       data-port-type={type}
-      className={`flex items-center gap-1 text-[10px] py-0.5 relative ${type === 'output' ? 'justify-end' : ''}`}
+      className={`flex items-center gap-0.5 text-[9px] py-px relative ${type === 'output' ? 'justify-end' : ''}`}
     >
-      <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_0_1px_#3b82f6]" />
+      <div className="w-1 h-1 rounded-full bg-blue-500 shadow-[0_0_0_1px_#3b82f6]" />
       <span className="text-zinc-500 font-medium">{label}</span>
       {value !== undefined && <span className="text-zinc-900 font-mono font-semibold truncate">{value}</span>}
     </div>

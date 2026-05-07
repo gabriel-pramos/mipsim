@@ -1,7 +1,11 @@
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import type { Route } from "./+types/simulator";
 import ProcessorView from '../components/ProcessorView';
 import ProcessorTerminal from '../components/ProcessorTerminal';
+import InstructionList from '../components/InstructionList';
+import RegistersPanel from '../components/RegistersPanel';
+import DataMemoryPanel from '../components/DataMemoryPanel';
 import { useProcessor } from '../core/processorContext';
 
 export function meta({}: Route.MetaArgs) {
@@ -14,21 +18,59 @@ export function meta({}: Route.MetaArgs) {
 export default function SimulatorPage() {
   const {
     state,
+    prevRegisters,
     instructionWordMap,
     userTextWordCount,
     isRunning,
     executionSpeed,
     pastUser,
+    breakpoints,
     step,
     run,
     stop,
     reset,
     sendToTerminal,
     setSpeed,
+    toggleBreakpoint,
+    clearBreakpoints,
   } = useProcessor();
+
+  const [layoutResetKey, setLayoutResetKey] = useState(0);
+  const resetLayout = useCallback(() => setLayoutResetKey((k) => k + 1), []);
 
   const stepDisabled = isRunning || pastUser;
   const runDisabled = pastUser;
+  const pcWord = (state.pc >>> 2) >>> 0;
+
+  // Keyboard shortcuts: F10 = step, F5 = run/stop, Ctrl+Shift+F5 = reset.
+  // Skip when focus is in an editable element so we don't steal terminal/editor input.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const editable = !!target && (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable ||
+        !!target.closest('.monaco-editor')
+      );
+      if (editable) return;
+      if (e.key === 'F10') {
+        e.preventDefault();
+        if (!stepDisabled) step();
+      } else if (e.key === 'F5') {
+        e.preventDefault();
+        if (e.ctrlKey && e.shiftKey) {
+          reset();
+        } else if (isRunning) {
+          stop();
+        } else if (!runDisabled) {
+          run();
+        }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [step, run, stop, reset, isRunning, stepDisabled, runDisabled]);
 
   if (userTextWordCount === 0) {
     return (
@@ -47,13 +89,14 @@ export default function SimulatorPage() {
   }
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col">
-      {/* Controls bar (top) */}
-      <div className="shrink-0 bg-white border-b border-zinc-200 h-10 flex items-center px-4 gap-3 text-xs">
+    <div className="flex-1 min-h-0 grid grid-rows-[auto_minmax(0,1fr)_auto] gap-3 p-3">
+      {/* Controls bar */}
+      <div className="bg-white border border-zinc-200 rounded-md h-10 flex items-center px-3 gap-3 text-xs overflow-x-auto">
         <div className="flex items-center gap-1.5">
           <button
             onClick={step}
             disabled={stepDisabled}
+            title="Step (F10)"
             className={`px-3 py-1 text-xs font-medium rounded border transition-colors ${
               stepDisabled
                 ? 'bg-zinc-50 text-zinc-300 border-zinc-200 cursor-not-allowed'
@@ -65,6 +108,7 @@ export default function SimulatorPage() {
           <button
             onClick={isRunning ? stop : run}
             disabled={runDisabled}
+            title={isRunning ? 'Stop (F5)' : 'Run (F5)'}
             className={`px-3 py-1 text-xs font-medium rounded border transition-colors ${
               runDisabled
                 ? 'bg-zinc-50 text-zinc-300 border-zinc-200 cursor-not-allowed'
@@ -77,6 +121,7 @@ export default function SimulatorPage() {
           </button>
           <button
             onClick={reset}
+            title="Reset (Ctrl+Shift+F5)"
             className="px-3 py-1 text-xs font-medium rounded border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 transition-colors cursor-pointer"
           >
             Reset
@@ -101,20 +146,51 @@ export default function SimulatorPage() {
 
         <div className="w-px h-5 bg-zinc-200" />
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={resetLayout}
+            title="Reset draggable component positions"
+            className="px-2 py-1 text-xs font-medium rounded border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 transition-colors cursor-pointer"
+          >
+            Reset Layout
+          </button>
+          <button
+            onClick={clearBreakpoints}
+            disabled={breakpoints.size === 0}
+            title="Clear all breakpoints"
+            className={`px-2 py-1 text-xs font-medium rounded border transition-colors ${
+              breakpoints.size === 0
+                ? 'bg-zinc-50 text-zinc-300 border-zinc-200 cursor-not-allowed'
+                : 'bg-white text-zinc-700 border-zinc-300 hover:bg-zinc-50 cursor-pointer'
+            }`}
+          >
+            Clear BPs
+          </button>
+        </div>
+
+        <div className="w-px h-5 bg-zinc-200" />
+
+        <div className="flex items-center gap-4 ml-auto">
           <div className="flex items-center gap-1.5">
             <span className="text-zinc-400">PC</span>
-            <span className="font-mono font-semibold text-zinc-900">{state.pc}</span>
+            <span className="font-mono font-semibold text-zinc-900 tabular-nums">{state.pc}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="text-zinc-400">Instr</span>
-            <span className="font-mono font-semibold text-zinc-900">
-              {(state.pc >>> 2) >>> 0} / {userTextWordCount}
+            <span className="font-mono font-semibold text-zinc-900 tabular-nums">
+              {pcWord} / {userTextWordCount}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-zinc-400">BPs</span>
+            <span className="font-mono font-semibold text-zinc-900 tabular-nums">
+              {breakpoints.size}
             </span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="text-zinc-400">Status</span>
             <span
+              aria-live="polite"
               className={`font-mono font-semibold ${
                 isRunning
                   ? 'text-emerald-600'
@@ -129,80 +205,40 @@ export default function SimulatorPage() {
         </div>
       </div>
 
-      {/* Middle: datapath + data memory */}
-      <div className="flex-1 min-h-0 flex gap-3 p-3">
-        <div className="flex-1 min-w-0 min-h-0 flex">
-          <ProcessorView
-            state={state}
+      {/* Main row: [instructions over datapath] | registers + data memory */}
+      <div className="min-h-0 grid grid-cols-[minmax(0,1fr)_280px] gap-3">
+        <div className="min-h-0 min-w-0 grid grid-rows-[200px_minmax(0,1fr)] gap-3">
+          <InstructionList
             instructionWordMap={instructionWordMap}
             userTextWordCount={userTextWordCount}
+            currentPcWord={pcWord}
+            breakpoints={breakpoints}
+            onToggleBreakpoint={toggleBreakpoint}
+            isRunning={isRunning}
+            pastUser={pastUser}
           />
+          <div className="min-h-0 min-w-0 flex">
+            <ProcessorView
+              state={state}
+              instructionWordMap={instructionWordMap}
+              layoutResetKey={layoutResetKey}
+            />
+          </div>
         </div>
 
-        <div className="w-56 shrink-0 bg-white border border-zinc-200 rounded-md flex flex-col overflow-hidden">
-          <div className="px-3 py-1.5 border-b border-zinc-200 shrink-0">
-            <h3 className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider m-0">
-              Data Memory
-            </h3>
-          </div>
-          <div className="flex-1 min-h-0 overflow-auto">
-            {Object.keys(state.dataMemoryContents).length === 0 ? (
-              <div className="text-center text-xs text-zinc-400 py-6">
-                No data in memory
-              </div>
-            ) : (
-              <table className="w-full text-sm border-collapse">
-                <thead className="sticky top-0 bg-white">
-                  <tr className="border-b border-zinc-200">
-                    <th className="text-left py-1 px-2 text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">
-                      Addr
-                    </th>
-                    <th className="text-right py-1 px-2 text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">
-                      Value
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.entries(state.dataMemoryContents)
-                    .sort(([a], [b]) => Number(a) - Number(b))
-                    .map(([addr, val]) => {
-                      const numAddr = Number(addr);
-                      const isActive =
-                        numAddr === state.dataMemory.address &&
-                        (state.controlSignals.memRead ||
-                          state.controlSignals.memWrite);
-                      return (
-                        <tr
-                          key={addr}
-                          className={`border-b border-zinc-100 ${
-                            isActive ? 'bg-indigo-50' : 'hover:bg-zinc-50'
-                          }`}
-                        >
-                          <td className="py-1 px-2 font-mono text-[10px] text-zinc-600">
-                            0x{numAddr.toString(16).toUpperCase().padStart(4, '0')}
-                          </td>
-                          <td className="py-1 px-2 font-mono text-[10px] text-right font-semibold text-zinc-900">
-                            {val}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
-            )}
-          </div>
+        <div className="min-h-0 min-w-0 grid grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
+          <RegistersPanel state={state} prevRegisters={prevRegisters} />
+          <DataMemoryPanel state={state} />
         </div>
       </div>
 
-      {/* Terminal (bottom) */}
-      <div className="shrink-0 px-3 pb-3">
-        <ProcessorTerminal
-          output={state.terminalOutput}
-          exception={state.exception}
-          cop0={state.cop0}
-          onSubmitLine={sendToTerminal}
-        />
-      </div>
+      {/* Terminal */}
+      <ProcessorTerminal
+        output={state.terminalOutput}
+        exception={state.exception}
+        cop0={state.cop0}
+        onSubmitLine={sendToTerminal}
+      />
     </div>
   );
 }

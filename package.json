@@ -12,9 +12,11 @@
     "parser": "jison parser/mips.jison -o parser/mips.js -m js; echo 'export default mips;' >> parser/mips.js"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
     "@react-router/node": "^7.9.2",
     "@react-router/serve": "^7.9.2",
     "isbot": "^5.1.31",
+    "monaco-editor": "^0.55.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-router": "^7.9.2"

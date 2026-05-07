@@ -81,16 +81,16 @@ export default function ComponentView({
       }}
       onMouseDown={handleMouseDown}
     >
-      <div className="component-header px-2 py-1 border-b border-zinc-100 cursor-grab bg-white rounded-t flex items-center gap-1.5">
+      <div className="component-header px-1.5 py-0.5 border-b border-zinc-100 cursor-grab bg-white rounded-t flex items-center gap-1">
         <span
-          className="w-1.5 h-1.5 rounded-full shrink-0"
+          className="w-1 h-1 rounded-full shrink-0"
           style={{ backgroundColor: color }}
         />
-        <h3 className="m-0 text-zinc-700 text-[11px] font-semibold truncate">
+        <h3 className="m-0 text-zinc-700 text-[10px] font-semibold truncate">
           {title}
         </h3>
       </div>
-      <div className="p-2">{children}</div>
+      <div className="px-1.5 py-1">{children}</div>
     </div>
   );
 }

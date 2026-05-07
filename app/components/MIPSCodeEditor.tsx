@@ -1,7 +1,16 @@
 import { useState, useRef } from 'react';
+import Editor, { type OnMount } from '@monaco-editor/react';
+import type * as Monaco from 'monaco-editor';
 import { MIPSParser } from '../utils/mipsParser';
 import { normalizeInstructions } from '../utils/instructionConverter';
 import { SAMPLE_PROGRAMS } from '../utils/samplePrograms';
+import {
+  MIPS_LANGUAGE_ID,
+  MIPS_THEME_ID,
+  applyParseErrorMarker,
+  clearParseErrorMarkers,
+  registerMipsLanguage,
+} from '../utils/mipsMonaco';
 import type { Instruction } from '../core/encoding';
 
 interface MIPSCodeEditorProps {
@@ -24,11 +33,27 @@ export default function MIPSCodeEditor({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const parserRef = useRef<MIPSParser | null>(null);
+  const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
+  const monacoRef = useRef<typeof Monaco | null>(null);
 
-  const handleCodeChange = (newCode: string) => {
-    onCodeChange(newCode);
+  const handleEditorMount: OnMount = (editor, monaco) => {
+    editorRef.current = editor;
+    monacoRef.current = monaco;
+    registerMipsLanguage(monaco);
+    const model = editor.getModel();
+    if (model) {
+      monaco.editor.setModelLanguage(model, MIPS_LANGUAGE_ID);
+    }
+    monaco.editor.setTheme(MIPS_THEME_ID);
+  };
+
+  const handleEditorChange = (value: string | undefined) => {
+    onCodeChange(value ?? '');
     setError(null);
     setSuccess(null);
+    if (monacoRef.current && editorRef.current) {
+      clearParseErrorMarkers(monacoRef.current, editorRef.current);
+    }
   };
 
   const handleSampleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -39,6 +64,9 @@ export default function MIPSCodeEditor({
       onCodeChange(sample.code);
       setError(null);
       setSuccess(null);
+      if (monacoRef.current && editorRef.current) {
+        clearParseErrorMarkers(monacoRef.current, editorRef.current);
+      }
     }
     e.target.value = '';
   };
@@ -82,19 +110,29 @@ export default function MIPSCodeEditor({
           message += `, ${dataSize} byte(s) of data`;
         }
         setSuccess(message);
+        if (monacoRef.current && editorRef.current) {
+          clearParseErrorMarkers(monacoRef.current, editorRef.current);
+        }
         onAfterLoad?.();
       }
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Unknown error parsing MIPS code',
-      );
+      const message =
+        err instanceof Error ? err.message : 'Unknown error parsing MIPS code';
+      setError(message);
+      if (monacoRef.current && editorRef.current) {
+        applyParseErrorMarker({
+          monaco: monacoRef.current,
+          editor: editorRef.current,
+          message,
+        });
+      }
     }
   };
 
   return (
-    <div className="bg-white border border-zinc-200 rounded-md flex-1 flex flex-col">
+    <div className="bg-white flex-1 min-h-0 flex flex-col">
       {/* Toolbar */}
-      <div className="px-4 py-2.5 border-b border-zinc-200 flex items-center gap-3">
+      <div className="px-4 py-2.5 border-b border-zinc-200 flex items-center gap-3 shrink-0">
         <select
           onChange={handleSampleChange}
           defaultValue=""
@@ -121,28 +159,67 @@ export default function MIPSCodeEditor({
       </div>
 
       {/* Editor */}
-      <textarea
-        value={code}
-        onChange={(e) => handleCodeChange(e.target.value)}
-        className="flex-1 min-h-[360px] p-4 font-mono text-sm leading-relaxed border-none outline-none resize-none bg-zinc-50 text-zinc-900"
-        spellCheck={false}
-        placeholder="Enter MIPS assembly code..."
-      />
+      <div className="flex-1 min-h-0 bg-[#fafafa]">
+        <Editor
+          value={code}
+          onChange={handleEditorChange}
+          onMount={handleEditorMount}
+          language={MIPS_LANGUAGE_ID}
+          theme={MIPS_THEME_ID}
+          height="100%"
+          loading={
+            <div className="h-full w-full flex items-center justify-center text-sm text-zinc-500">
+              Loading editor...
+            </div>
+          }
+          options={{
+            minimap: { enabled: true, renderCharacters: false },
+            fontSize: 13,
+            fontFamily:
+              "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace",
+            fontLigatures: true,
+            lineNumbers: 'on',
+            renderLineHighlight: 'all',
+            scrollBeyondLastLine: false,
+            automaticLayout: true,
+            tabSize: 8,
+            insertSpaces: true,
+            detectIndentation: false,
+            bracketPairColorization: { enabled: true },
+            wordWrap: 'off',
+            fixedOverflowWidgets: true,
+            smoothScrolling: true,
+            cursorBlinking: 'smooth',
+            cursorSmoothCaretAnimation: 'on',
+            padding: { top: 12, bottom: 12 },
+            scrollbar: {
+              verticalScrollbarSize: 10,
+              horizontalScrollbarSize: 10,
+            },
+            stickyScroll: { enabled: false },
+            contextmenu: true,
+            quickSuggestions: { other: true, comments: false, strings: false },
+            suggestOnTriggerCharacters: true,
+            wordBasedSuggestions: 'off',
+            'semanticHighlighting.enabled': false,
+          }}
+        />
+      </div>
 
       {/* Status messages */}
       {error && (
-        <div className="px-4 py-2.5 bg-red-50 border-t border-red-200 text-red-700 text-sm font-mono whitespace-pre-line">
+        <div className="px-4 py-2.5 bg-red-50 border-t border-red-200 text-red-700 text-sm font-mono whitespace-pre-line shrink-0">
           {error}
         </div>
       )}
       {success && (
-        <div className="px-4 py-2.5 bg-emerald-50 border-t border-emerald-200 text-emerald-700 text-sm">
+        <div className="px-4 py-2.5 bg-emerald-50 border-t border-emerald-200 text-emerald-700 text-sm shrink-0">
           {success}
         </div>
       )}
 
       {/* Instruction reference */}
-      <details className="border-t border-zinc-200">
+      <details className="border-t border-zinc-200 shrink-0">
         <summary className="px-4 py-2 text-xs font-medium text-zinc-500 cursor-pointer hover:text-zinc-700 select-none">
           Supported instructions
         </summary>
