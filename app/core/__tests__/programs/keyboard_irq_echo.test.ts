@@ -15,6 +15,8 @@ import { MIPS_EXCEPTION_VECTOR } from '../../constants';
  *     ori $t1, $zero, 1
  *     sw $t1, 0($t0)
  *     sw $t1, 0x10($t0)
+ *     ori $t1, $zero, 0x0101
+ *     mtc0 $t1, $12
  * main:
  *     j main
  *
@@ -32,7 +34,9 @@ const USER: Instruction[] = [
   { type: 'i_type', op: 'ori', rt: REG.t1, rs: REG.zero, immediate: 1 },
   { type: 'i_type', op: 'sw', rt: REG.t1, base: REG.t0, offset: 0 },
   { type: 'i_type', op: 'sw', rt: REG.t1, base: REG.t0, offset: 0x10 },
-  { type: 'j_type', op: 'j', target: 5 },
+  { type: 'i_type', op: 'ori', rt: REG.t1, rs: REG.zero, immediate: 0x0101 },
+  { type: 'cop0_type', op: 'mtc0', rt: REG.t1, rd: 12 },
+  { type: 'j_type', op: 'j', target: 7 },
 ];
 
 const KERNEL: Instruction[] = [
@@ -70,14 +74,22 @@ describe('program: keyboard IRQ echo (vector 0x80000180)', () => {
     expect(p.getState().exception.masterInterruptEnable).toBe(true);
 
     stepN(p, 1);
-    expect(pc()).toBe(20);
+    expect(pc()).toBe(24);
+    expect(r()[REG.t1]).toBe(0x0101);
+
+    stepN(p, 1);
+    expect(pc()).toBe(28);
+    expect(p.getState().cop0.status).toBe(0x0101);
+
+    stepN(p, 1);
+    expect(pc()).toBe(28);
     expect(p.getState().exception.exl).toBe(false);
 
     p.enqueueKeyboardAscii('K');
 
     stepN(p, 1);
     expect(p.getState().exception.exl).toBe(true);
-    expect(p.getState().exception.epc).toBe(20);
+    expect(p.getState().exception.epc).toBe(28);
     expect(pc()).toBe(MIPS_EXCEPTION_VECTOR);
 
     stepN(p, 1);
@@ -94,6 +106,6 @@ describe('program: keyboard IRQ echo (vector 0x80000180)', () => {
 
     stepN(p, 1);
     expect(p.getState().exception.exl).toBe(false);
-    expect(pc()).toBe(20);
+    expect(pc()).toBe(28);
   });
 });

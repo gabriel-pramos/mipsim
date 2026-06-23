@@ -85,7 +85,9 @@ setup:
     lui $t0, 0xffff
     ori $t1, $zero, 1
     sw $t1, 0($t0)          # keyboard interrupt enable (0xFFFF0000 bit 0)
-    sw $t1, 0x10($t0)       # master IE (0xFFFF0010 bit 1)
+    sw $t1, 0x10($t0)       # master IE (0xFFFF0010 bit 0)
+    ori $t1, $zero, 0x0101   # IE + IM[0] (keyboard IRQ)
+    mtc0 $t1, $12            # Status
 
 main:
     j main                  # spin until a keyboard IRQ fires`,

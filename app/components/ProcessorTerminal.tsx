@@ -25,7 +25,7 @@ export default function ProcessorTerminal({
         </h3>
         <span className="font-mono text-[11px] text-zinc-400">
           EPC 0x{exception.epc.toString(16)} EXL {exception.exl ? '1' : '0'} IRQ{' '}
-          {exception.interruptPending ? 'pend' : '—'}
+          {(cop0.cause & 0x100) !== 0 ? 'pend' : '—'}
         </span>
         <span className="font-mono text-[11px] text-zinc-400">
           KBD IE {exception.keyboardInterruptEnable ? 'on' : 'off'} · master IE{' '}
@@ -55,16 +55,17 @@ export default function ProcessorTerminal({
         className="flex gap-2 border-t border-zinc-200 px-2 py-1.5 bg-zinc-50"
         onSubmit={(e) => {
           e.preventDefault();
-          const t = line;
+          if (!line) return;
+          onSubmitLine(line);
           setLine('');
-          onSubmitLine(t.endsWith('\n') ? t : `${t}\n`);
         }}
       >
         <input
           type="text"
           value={line}
-          onChange={(e) => setLine(e.target.value)}
-          placeholder="Type and Enter — sent to keyboard MMIO (0xFFFF0004)"
+          maxLength={1}
+          onChange={(e) => setLine(e.target.value.slice(-1))}
+          placeholder="Type one char + Enter → keyboard MMIO (0xFFFF0004)"
           className="flex-1 min-w-0 px-3 py-1.5 rounded-md border border-zinc-300 text-sm font-mono bg-white focus:outline-none focus:ring-1 focus:ring-zinc-400"
         />
         <button

@@ -1,7 +1,7 @@
 import { describe, it, expect } from '@jest/globals';
 import { loadFromUserAndKernel, stepN, REG } from './helpers/processorTestHarness';
 import type { Instruction } from '../encoding';
-import { MIPS_EXCEPTION_VECTOR } from '../constants';
+import { MIPS_EXCEPTION_VECTOR, STATUS_IE, STATUS_UM } from '../constants';
 
 describe('external interrupt and eret', () => {
   it('delivers interrupt after instruction; eret resumes at EPC', () => {
@@ -13,6 +13,7 @@ describe('external interrupt and eret', () => {
     const p = loadFromUserAndKernel(user, kernel);
     p.mmio.kbdInterruptEnable = true;
     p.mmio.masterInterruptEnable = true;
+    p.cp0Status = STATUS_UM | STATUS_IE | 0x0100;
     p.enqueueKeyboardAscii('x');
 
     stepN(p, 1);
@@ -27,6 +28,19 @@ describe('external interrupt and eret', () => {
 
     stepN(p, 1);
     expect(p.getState().registers[REG.t1]).toBe(2);
+  });
+
+  it('does not deliver without COP0 IE and IM configured', () => {
+    const user: Instruction[] = [{ type: 'i_type', op: 'addiu', rt: REG.t0, rs: REG.zero, immediate: 1 }];
+    const kernel: Instruction[] = [{ type: 'special', op: 'eret' }];
+    const p = loadFromUserAndKernel(user, kernel);
+    p.mmio.kbdInterruptEnable = true;
+    p.mmio.masterInterruptEnable = true;
+    p.enqueueKeyboardAscii('b');
+
+    stepN(p, 1);
+    expect(p.getState().exception.exl).toBe(false);
+    expect(p.getState().pc).toBe(4);
   });
 
   it('does not deliver when master interrupt enable is off', () => {

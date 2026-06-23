@@ -46,14 +46,12 @@ export class MmioController {
   /** Bit 0 writable: keyboard interrupt enable. Bit 1 read-only: ready. */
   kbdInterruptEnable = false;
   masterInterruptEnable = true;
-  interruptPending = false;
 
   reset(): void {
     this.rxQueue = [];
     this.terminal = '';
     this.kbdInterruptEnable = false;
     this.masterInterruptEnable = true;
-    this.interruptPending = false;
   }
 
   getTerminalOutput(): string {
@@ -191,6 +189,17 @@ export class MmioController {
     }
   }
 
+  /** Non-mutating snapshot of MMIO register words for display (peeks keyboard FIFO). */
+  getMmioSnapshot(): Record<number, number> {
+    return {
+      [MMIO_KEYBOARD_CTRL]: this.keyboardCtrlWord(),
+      [MMIO_KEYBOARD_DATA]: this.rxQueue.length > 0 ? (this.rxQueue[0] & 0xff) >>> 0 : 0,
+      [MMIO_DISPLAY_CTRL]: this.displayCtrlWord(),
+      [MMIO_DISPLAY_DATA]: 0,
+      [MMIO_SIM_STATUS]: this.simStatusWord(),
+    };
+  }
+
   /** Word image for RMW (does not consume keyboard FIFO). */
   private peekWordForRmW(base: number): number {
     const b = base >>> 0;
@@ -212,9 +221,6 @@ export class MmioController {
 
   enqueueKey(byte: number): void {
     this.rxQueue.push(byte & 0xff);
-    if (this.kbdInterruptEnable && this.masterInterruptEnable) {
-      this.interruptPending = true;
-    }
   }
 
   enqueueKeyboardAscii(text: string): void {

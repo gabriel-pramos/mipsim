@@ -130,7 +130,6 @@ export interface ProcessorState {
     epc: number;
     exl: boolean;
     exceptionVector: number;
-    interruptPending: boolean;
     masterInterruptEnable: boolean;
     keyboardInterruptEnable: boolean;
   };
@@ -355,21 +354,12 @@ export class Processor {
       case 12:
         return this.cp0Status >>> 0;
       case 13:
-        return this.getCauseForRead() >>> 0;
+        return this.cp0Cause >>> 0;
       case 14:
         return this.epc >>> 0;
       default:
         return 0;
     }
-  }
-
-  /** Cause as visible to mfc0, including legacy keyboard pending. */
-  private getCauseForRead(): number {
-    let c = this.cp0Cause >>> 0;
-    if (this.mmio.interruptPending && this.mmio.kbdInterruptEnable && this.mmio.masterInterruptEnable) {
-      c |= 0x100;
-    }
-    return c;
   }
 
   private writeCp0Register(rd: number, value: number): void {
@@ -395,37 +385,25 @@ export class Processor {
     const im = (this.cp0Status >>> 8) & 0xff;
     let ipByte = (this.cp0Cause >>> 8) & 0xff;
     if (this.pendingTimerEdge) ipByte |= 0x80;
-    if (this.mmio.interruptPending && this.mmio.masterInterruptEnable && this.mmio.kbdInterruptEnable) {
-      ipByte |= 0x01;
-    }
 
     const ie = (this.cp0Status & STATUS_IE) !== 0;
-    const cp0Ready = ie && im !== 0 && (im & ipByte) !== 0;
-    const legacyReady =
-      !ie &&
-      this.mmio.interruptPending &&
-      this.mmio.masterInterruptEnable &&
-      this.mmio.kbdInterruptEnable;
-
-    if (!cp0Ready && !legacyReady) return;
+    if (!ie || im === 0 || (im & ipByte) === 0) return;
 
     this.epc = this.pc.PC >>> 0;
     this.cp0Cause = (this.cp0Cause & ~0xff00) | ((ipByte & 0xff) << 8);
     this.cp0Cause &= ~0x7c;
 
-    if (cp0Ready && this.pendingTimerEdge && (im & 0x80) !== 0) {
+    if (this.pendingTimerEdge && (im & 0x80) !== 0) {
       this.pendingTimerEdge = false;
+    }
+    if ((im & 0x01) !== 0 && (ipByte & 0x01) !== 0) {
+      this.cp0Cause &= ~0x100;
     }
 
     const v = this.exceptionVector >>> 0;
     this.pc.PC = v;
     this.pc.PCUpdate(v);
     this.cp0Status |= STATUS_EXL;
-
-    if (legacyReady) {
-      this.mmio.interruptPending = false;
-      this.cp0Cause &= ~0x100;
-    }
   }
 
   private applySpecialInstruction(instr: Instruction | undefined): void {
@@ -594,20 +572,19 @@ export class Processor {
         memToReg: this.memToRegMux.getOutput('output') ?? 0,
         branchPc: this.branchMux.getOutput('output') ?? 0,
       },
-      dataMemoryContents: { ...this.dataMemory.dataMemory },
+      dataMemoryContents: { ...this.dataMemory.dataMemory, ...this.mmio.getMmioSnapshot() },
       instructionAddress: this.pc.PC,
       terminalOutput: this.mmio.getTerminalOutput(),
       exception: {
         epc: this.epc,
         exl: this.exl,
         exceptionVector: this.exceptionVector,
-        interruptPending: this.mmio.interruptPending,
         masterInterruptEnable: this.mmio.masterInterruptEnable,
         keyboardInterruptEnable: this.mmio.kbdInterruptEnable,
       },
       cop0: {
         status: this.cp0Status >>> 0,
-        cause: this.getCauseForRead() >>> 0,
+        cause: this.cp0Cause >>> 0,
         epc: this.epc >>> 0,
         userMode: !this.exl && (this.cp0Status & STATUS_UM) !== 0,
         kernelMode: this.exl || (this.cp0Status & STATUS_UM) === 0,
