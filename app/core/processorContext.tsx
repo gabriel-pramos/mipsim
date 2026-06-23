@@ -20,6 +20,8 @@ interface ProcessorContextValue {
   executionSpeed: number;
   code: string;
   pastUser: boolean;
+  /** Instructions executed since the last load or reset. */
+  stepCount: number;
   /** Word indices (byte PC / 4) where execution should pause when running. */
   breakpoints: Set<number>;
   loadInstructions: (
@@ -61,6 +63,7 @@ export function ProcessorProvider({ children }: { children: ReactNode }) {
   const [executionSpeed, setExecutionSpeed] = useState(1000);
   const [code, setCode] = useState(DEFAULT_CODE);
   const [breakpoints, setBreakpoints] = useState<Set<number>>(() => new Set());
+  const [stepCount, setStepCount] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Live mirror of breakpoints so the running interval sees current values
   // without restarting whenever the user toggles a breakpoint.
@@ -81,6 +84,7 @@ export function ProcessorProvider({ children }: { children: ReactNode }) {
       setState(fresh);
       setPrevRegisters([...fresh.registers]);
       setBreakpoints(new Set());
+      setStepCount(0);
     },
     [processor],
   );
@@ -90,6 +94,7 @@ export function ProcessorProvider({ children }: { children: ReactNode }) {
     processor.step();
     setPrevRegisters(before);
     setState(processor.getState());
+    setStepCount((n) => n + 1);
   }, [processor]);
 
   const run = useCallback(() => {
@@ -100,6 +105,7 @@ export function ProcessorProvider({ children }: { children: ReactNode }) {
       const newState = processor.getState();
       setPrevRegisters(before);
       setState(newState);
+      setStepCount((n) => n + 1);
 
       const pcWord = (newState.pc >>> 2) >>> 0;
       if (
@@ -128,6 +134,7 @@ export function ProcessorProvider({ children }: { children: ReactNode }) {
     const fresh = processor.getState();
     setState(fresh);
     setPrevRegisters([...fresh.registers]);
+    setStepCount(0);
     setIsRunning(false);
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
@@ -171,6 +178,7 @@ export function ProcessorProvider({ children }: { children: ReactNode }) {
     executionSpeed,
     code,
     pastUser,
+    stepCount,
     breakpoints,
     loadInstructions,
     step,

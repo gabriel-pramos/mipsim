@@ -103,7 +103,8 @@ export default function RegistersPanel({ state, prevRegisters }: RegistersPanelP
           const isRead = i === rs || i === rt;
           const isWrite = writingThisStep && i === writeReg;
           const changed = prevRegisters[i] !== undefined && prevRegisters[i] !== val;
-          return renderRow(REG_NAMES[i] ?? `$${i}`, val, {
+          const regName = REG_NAMES[i] ?? `$${i}`;
+          return renderRow(`${regName} ($${i})`, val, {
             key: i,
             isRead,
             isWrite,

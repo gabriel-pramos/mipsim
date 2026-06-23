@@ -24,6 +24,7 @@ export default function SimulatorPage() {
     isRunning,
     executionSpeed,
     pastUser,
+    stepCount,
     breakpoints,
     step,
     run,
@@ -134,9 +135,9 @@ export default function SimulatorPage() {
           <span className="text-zinc-400">Speed</span>
           <input
             type="range"
-            min="100"
+            min="0"
             max="2000"
-            step="100"
+            step="10"
             value={executionSpeed}
             onChange={(e) => setSpeed(parseInt(e.target.value))}
             className="w-24 cursor-pointer accent-zinc-600"
@@ -171,6 +172,10 @@ export default function SimulatorPage() {
         <div className="w-px h-5 bg-zinc-200" />
 
         <div className="flex items-center gap-4 ml-auto">
+          <div className="flex items-center gap-1.5">
+            <span className="text-zinc-400">Step</span>
+            <span className="font-mono font-semibold text-zinc-900 tabular-nums">{stepCount}</span>
+          </div>
           <div className="flex items-center gap-1.5">
             <span className="text-zinc-400">PC</span>
             <span className="font-mono font-semibold text-zinc-900 tabular-nums">{state.pc}</span>

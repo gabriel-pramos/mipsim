@@ -94,154 +94,64 @@ main:
   },
   {
     id: 'interrupts',
-    name: 'Polled interrupts demo',
-    description: 'Software-polled interrupt loop with timer and keyboard handlers, syscall I/O',
+    name: 'Timer + keyboard interrupts',
+    description: 'Real hardware interrupts: enables COP0/MMIO, handles timer (IP7) and keyboard IRQs at the 0x80000180 vector',
     code: `.data
-
-        msg_main:       .asciiz "Main program running...\\n"
-        msg_timer:      .asciiz ">>> Timer interrupt handled! <<<\\n"
-        msg_kbd:        .asciiz ">>> Keyboard interrupt handled! <<<\\n"
-        msg_done:       .asciiz "Main program finished.\\n"
-
-
-int_enabled:    .word   0       # 0 = interrupts off, 1 = on
-int_pending:    .word   0       # bitmask of pending interrupts
-                                #   bit 0 = timer
-                                #   bit 1 = keyboard
-int_handled:    .word   0       # flag: set to 1 after servicing
-counter:        .word   0       # incremented by timer handler
-
-INT_TIMER:      .word   1       # bit 0
-INT_KEYBOARD:   .word   2       # bit 1
+msg_banner:  .asciiz "Interrupts enabled. Type a key; timer ticks in the background.\\n"
+msg_kbd:     .asciiz "Key IRQ -> "
+msg_nl:      .asciiz "\\n"
+msg_timer:   .asciiz ">>> Timer IRQ ($s0 = tick count) <<<\\n"
 
 .text
 .globl main
 
 main:
-    # Enable interrupts by writing 1 to our virtual register
-    la      $t0, int_enabled
-    li      $t1, 1
-    sw      $t1, 0($t0)
+    # ---- Enable MARS-style hardware interrupts ----
+    lui     $t0, 0xffff          # MMIO base = 0xFFFF0000
+    ori     $t1, $zero, 1
+    sw      $t1, 0($t0)          # keyboard control: IRQ enable   (0xFFFF0000)
+    sw      $t1, 0x10($t0)       # sim status: master IRQ enable   (0xFFFF0010)
 
-    # Main loop: run 5 iterations, polling for interrupts each pass
-    li      $s0, 5              # loop counter
+    ori     $t1, $zero, 0x8101   # Status: IE | IM1 (keyboard) | IM7 (timer)
+    mtc0    $t1, $12             # write CP0 Status (register 12)
 
-main_loop:
-    beq     $s0, $zero, main_done
-    nop
+    li      $s0, 0               # $s0 = timer tick counter (bumped by the ISR)
 
-    # ---- Poll for pending interrupts ----
-    jal     check_interrupts
-    nop
-
-    # ---- Do main work ----
-    li      $v0, 4
-    la      $a0, msg_main
+    li      $v0, 4               # print the banner once
+    la      $a0, msg_banner
     syscall
 
-    # Simulate some work (delay)
-    li      $t2, 50000
-delay:
-    addi    $t2, $t2, -1
-    bne     $t2, $zero, delay
+idle:
+    j       idle                 # spin forever; the handler runs on each IRQ
+
+.ktext 0x80000180
+# Single entry point for every interrupt. $k0/$k1 are scratch; we deliberately
+# clobber $v0/$a0 (for syscall output) and $s0 (the tick counter) — the idle
+# loop never reads them, so saving/restoring is omitted to keep the demo short.
+irq_handler:
+    mfc0    $k0, $13             # read CP0 Cause
+    nop                          # CP0 read hazard: result is usable one slot later
+    andi    $k1, $k0, 0x8000     # IP7 set => this was a timer interrupt
+    bne     $k1, $zero, irq_timer
     nop
 
-    addi    $s0, $s0, -1
-    j       main_loop
-    nop
-
-main_done:
-    # Disable interrupts
-    la      $t0, int_enabled
-    sw      $zero, 0($t0)
-
-    li      $v0, 4
-    la      $a0, msg_done
-    syscall
-
-    li      $v0, 10
-    syscall
-
-check_interrupts:
-    addi    $sp, $sp, -4
-    sw      $ra, 0($sp)
-
-    # Are interrupts enabled?
-    la      $t0, int_enabled
-    lw      $t1, 0($t0)
-    beq     $t1, $zero, check_done     # not enabled, skip
-    nop
-
-    # Read pending flags
-    la      $t0, int_pending
-    lw      $t1, 0($t0)
-    beq     $t1, $zero, check_done     # nothing pending
-    nop
-
-    # Check timer bit (bit 0)
-    andi    $t2, $t1, 0x0001
-    bne     $t2, $zero, dispatch_timer
-    nop
-
-    # Check keyboard bit (bit 1)
-    andi    $t2, $t1, 0x0002
-    bne     $t2, $zero, dispatch_keyboard
-    nop
-
-    j       check_done
-    nop
-
-dispatch_timer:
-    jal     handle_timer
-    nop
-
-    # Clear timer bit in pending register
-    la      $t0, int_pending
-    lw      $t1, 0($t0)
-    andi    $t1, $t1, 0xFFFE       # clear bit 0
-    sw      $t1, 0($t0)
-    j       check_done
-    nop
-
-dispatch_keyboard:
-    jal     handle_keyboard
-    nop
-
-    # Clear keyboard bit in pending register
-    la      $t0, int_pending
-    lw      $t1, 0($t0)
-    andi    $t1, $t1, 0xFFFD       # clear bit 1
-    sw      $t1, 0($t0)
-    j       check_done
-    nop
-
-check_done:
-    lw      $ra, 0($sp)
-    addi    $sp, $sp, 4
-    jr      $ra
-    nop
-
-handle_timer:
-    # Increment the software counter
-    la      $t3, counter
-    lw      $t4, 0($t3)
-    addi    $t4, $t4, 1
-    sw      $t4, 0($t3)
-
-    # Print timer interrupt message
-    li      $v0, 4
-    la      $a0, msg_timer
-    syscall
-
-    jr      $ra
-    nop
-
-handle_keyboard:
+irq_kbd:                         # keyboard interrupt: echo the typed key
+    lui     $k0, 0xffff
+    lw      $k1, 4($k0)          # consume the key byte (0xFFFF0004)
     li      $v0, 4
     la      $a0, msg_kbd
     syscall
+    sw      $k1, 0xc($k0)        # echo the key to the display (0xFFFF000C)
+    li      $v0, 4
+    la      $a0, msg_nl
+    syscall
+    eret
 
-    jr      $ra
-    nop`,
+irq_timer:                       # timer interrupt: bump and report the counter
+    addi    $s0, $s0, 1
+    li      $v0, 4
+    la      $a0, msg_timer
+    syscall
+    eret`,
   },
 ];

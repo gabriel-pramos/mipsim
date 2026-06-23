@@ -103,6 +103,46 @@ export class MIPSParser {
     }
   }
 
+  /** Decode C-style escape sequences in a `.asciiz` literal (after quote stripping). */
+  private static decodeStringEscapes(raw: string): string {
+    let out = '';
+    for (let i = 0; i < raw.length; i++) {
+      const c = raw[i];
+      if (c !== '\\' || i + 1 >= raw.length) {
+        out += c;
+        continue;
+      }
+      const next = raw[++i];
+      switch (next) {
+        case 'n':
+          out += '\n';
+          break;
+        case 't':
+          out += '\t';
+          break;
+        case 'r':
+          out += '\r';
+          break;
+        case '0':
+          out += '\0';
+          break;
+        case '\\':
+          out += '\\';
+          break;
+        case '"':
+          out += '"';
+          break;
+        case "'":
+          out += "'";
+          break;
+        default:
+          out += next;
+          break;
+      }
+    }
+    return out;
+  }
+
   /**
    * Read data section and populate symbol table
    */
@@ -116,6 +156,8 @@ export class MIPSParser {
         let string = statement.string;
         // Remove the quotes
         string = string.replace(/^"|"$/g, '');
+        // Interpret C-style escapes (\n, \t, \\, …) so output renders correctly.
+        string = MIPSParser.decodeStringEscapes(string);
         // Write every byte of the string to the data section
         for (let i = 0; i < string.length; i++) {
           this.data.push(string.charCodeAt(i));
